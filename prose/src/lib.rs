@@ -7,16 +7,16 @@ pub type BoxError = std::boxed::Box<dyn
 	+ std::marker::Sync // needed for threads
 >;
 
-#[derive(Clone,Debug)]
+#[derive(Clone,Debug,PartialEq)]
 pub enum Markdown {
-    Heading(u8, std::string::String),
-    Bold(std::string::String),
-    Italic(std::string::String),
-    OrderedList(std::vec::Vec<std::string::String>),
-    UnorderedList(std::vec::Vec<std::string::String>),
-    Code(std::string::String),
-    Link(std::string::String, std::string::String),
-    Image(std::string::String, std::string::String),
+    Heading(usize, String),
+    Bold(String),
+    Italic(String),
+    OrderedList(Vec<String>),
+    UnorderedList(Vec<String>),
+    Code(String),
+    Link(String, String),
+    Image(String, String),
 }
 
 pub(self) mod parsers {
@@ -26,15 +26,27 @@ pub(self) mod parsers {
         nom::bytes::complete::is_not(" \t")(i)
     }
 
-    fn match_heading(i: &str) -> nom::IResult<&str, &str> {
-        nom::bytes::complete::take_while1(|c| c == '#')(i)
+	fn match_heading(i: &str) -> nom::IResult<&str, &str>  {
+		nom::bytes::complete::take_while1(|c| c == '#')(i)
+	}
+
+    fn match_header_tag(i: &str) -> nom::IResult<&str, usize> {
+        nom::combinator::map( match_heading, |s: &str| s.len() )(i)
     }
+
+	fn match_header(i: &str) -> nom::IResult<&str, Markdown> {
+		nom::combinator::map(
+			nom::sequence::tuple((
+				match_header_tag,
+				match_line
+			)),
+			|r| Markdown::Heading(r.0, r.1.to_string())
+		)(i)
+	}
 
     fn match_line(i: &str) -> nom::IResult<&str, &str> {
         nom::bytes::complete::take_while1(|c| c != '\n')(i)
     }
-
-
 
     #[cfg(test)]
     mod tests {
@@ -50,11 +62,15 @@ pub(self) mod parsers {
         }
 
         #[test]
-        fn test_match_heading() {
-            assert_eq!(match_heading("#"), Ok(("", "#")));
-            assert_eq!(match_heading("###"), Ok(("", "###")));
-            assert_eq!(match_heading("# h1"), Ok((" h1", "#")));
+        fn test_match_headers() {
+			assert_eq!(match_heading("#"), Ok(("", "#")));
+            assert_eq!(match_header_tag("#"), Ok(("", 1)));
+			assert_eq!(match_heading("###"), Ok(("", "###")));
+            assert_eq!(match_header_tag("###"), Ok(("", 3)));
+			assert_eq!(match_heading("# h1"), Ok((" h1", "#")));
+            assert_eq!(match_header_tag("# h1"), Ok((" h1", 1)));
 			assert_eq!(match_heading(" "), Err(nom::Err::Error((" ", nom::error::ErrorKind::TakeWhile1))));
+			assert_eq!(match_header_tag(" "), Err(nom::Err::Error((" ", nom::error::ErrorKind::TakeWhile1))));
         }
 
         #[test]
@@ -64,5 +80,10 @@ pub(self) mod parsers {
             assert_eq!(match_line("okay\n\n"), Ok(("\n\n", "okay")));
 			assert_eq!(match_line("\n"), Err(nom::Err::Error(("\n", nom::error::ErrorKind::TakeWhile1))));
         }
+
+		#[test]
+		fn test_match_header() {
+			assert_eq!(match_header("# h1"), Ok(("", Markdown::Heading(1, String::from(" h1")))));
+		}
     }
 }
