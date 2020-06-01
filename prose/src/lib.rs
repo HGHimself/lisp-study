@@ -28,7 +28,10 @@ pub(self) mod parsers {
 
 	// this will match a whole line
 	fn match_line(i: &str) -> nom::IResult<&str, &str> {
-        nom::bytes::complete::take_while1(|c| c != '\n')(i)
+		nom::sequence::terminated(
+        	nom::bytes::complete::take_while(|c| c != '\n'),
+			nom::bytes::complete::tag("\n")
+		)(i)
     }
 
 	// this guy matches the literal character #
@@ -64,13 +67,21 @@ pub(self) mod parsers {
 		)(i)
 	}
 
-	fn match_unordered_list(i: &str)  -> nom::IResult<&str, Markdown> {
+	fn match_many_unordered(i: &str) -> nom::IResult<&str, Vec<String>> {
 		nom::combinator::map(
 			nom::multi::many0(match_unordered_list_element),
-			|r| Markdown::UnorderedList(r.iter().map(|s| s.to_string()).collect())
+			|line| line.iter().map( |s| s.to_string() ).collect()
 		)(i)
 	}
 
+	fn match_unordered_list(i: &str)  -> nom::IResult<&str, Markdown> {
+		nom::combinator::map(
+			nom::multi::many0(match_unordered_list_element),
+			|r| Markdown::UnorderedList(
+				r.iter().map(|s| s.to_string()).collect()
+			)
+		)(i)
+	}
 
     #[cfg(test)]
     mod tests {
@@ -87,10 +98,11 @@ pub(self) mod parsers {
 
 		#[test]
         fn test_match_line() {
-            assert_eq!(match_line("and then afterwards we were able to see everything\n"), Ok(("\n", "and then afterwards we were able to see everything")));
-            assert_eq!(match_line("but\nthen later"), Ok(("\nthen later", "but")));
-            assert_eq!(match_line("okay\n\n"), Ok(("\n\n", "okay")));
-			assert_eq!(match_line("\n"), Err(nom::Err::Error(("\n", nom::error::ErrorKind::TakeWhile1))));
+            assert_eq!(match_line("and then afterwards we were able to see everything\n"), Ok(("", "and then afterwards we were able to see everything")));
+            assert_eq!(match_line("but\nthen later"), Ok(("then later", "but")));
+            assert_eq!(match_line("okay\n\n"), Ok(("\n", "okay")));
+			assert_eq!(match_line("\n"), Ok(("", "")));
+			assert_eq!(match_line(""), Err(nom::Err::Error(("", nom::error::ErrorKind::Tag))));
         }
 
         #[test]
@@ -105,15 +117,15 @@ pub(self) mod parsers {
 
 		#[test]
 		fn test_match_header() {
-			assert_eq!(match_header("# h1"), Ok(("", Markdown::Heading(1, String::from("h1")))));
-			assert_eq!(match_header("## h2"), Ok(("", Markdown::Heading(2, String::from("h2")))));
-			assert_eq!(match_header("###  h3"), Ok(("", Markdown::Heading(3, String::from(" h3")))));
+			assert_eq!(match_header("# h1\n"), Ok(("", Markdown::Heading(1, String::from("h1")))));
+			assert_eq!(match_header("## h2\n"), Ok(("", Markdown::Heading(2, String::from("h2")))));
+			assert_eq!(match_header("###  h3\n"), Ok(("", Markdown::Heading(3, String::from(" h3")))));
 			assert_eq!(match_header("###h3"), Err(nom::Err::Error(("h3", nom::error::ErrorKind::Tag))));
 			assert_eq!(match_header("###"), Err(nom::Err::Error(("", nom::error::ErrorKind::Tag))));
 			assert_eq!(match_header(""), Err(nom::Err::Error(("", nom::error::ErrorKind::TakeWhile1))));
 			assert_eq!(match_header("\n"), Err(nom::Err::Error(("\n", nom::error::ErrorKind::TakeWhile1))));
 			assert_eq!(match_header("#\n"), Err(nom::Err::Error(("\n", nom::error::ErrorKind::Tag))));
-			assert_eq!(match_header("# \n"), Err(nom::Err::Error(("\n", nom::error::ErrorKind::TakeWhile1))));
+			assert_eq!(match_header("# \n"), Ok(("", Markdown::Heading(1, String::from("")))));
 		}
 
 		#[test]
@@ -128,18 +140,24 @@ pub(self) mod parsers {
 
 		#[test]
 		fn test_match_unordered_list_element() {
-			assert_eq!(match_unordered_list_element("- this is an element"), Ok(("", "this is an element")));
-			assert_eq!(match_unordered_list_element("- this is an element\n- here is another"), Ok(("\n- here is another", "this is an element")));
+			assert_eq!(match_unordered_list_element("- this is an element\n"), Ok(("", "this is an element")));
+			assert_eq!(match_unordered_list_element("- this is an element\n- here is another\n"), Ok(("- here is another\n", "this is an element")));
 			assert_eq!(match_unordered_list_element(""), Err(nom::Err::Error(("", nom::error::ErrorKind::Tag))));
 			assert_eq!(match_unordered_list_element("\n"), Err(nom::Err::Error(("\n", nom::error::ErrorKind::Tag))));
-			assert_eq!(match_unordered_list_element("- \n"), Err(nom::Err::Error(("\n", nom::error::ErrorKind::TakeWhile1))));
+			assert_eq!(match_unordered_list_element("- \n"), Ok(("", "")));
 			assert_eq!(match_unordered_list_element("-\n"), Err(nom::Err::Error(("\n", nom::error::ErrorKind::Tag))));
 		}
 
 		#[test]
+		fn test_match_many_unordered() {
+			assert_eq!(match_many_unordered("- this is an element\n"), Ok(("",  vec![String::from("this is an element")])));
+			assert_eq!(match_many_unordered("- this is an element\n- here is another\n"), Ok(("", vec![String::from("this is an element"), String::from("here is another")])));
+		}
+
+		#[test]
 		fn test_match_unordered_list() {
-			assert_eq!(match_unordered_list("- this is an element"), Ok(("", Markdown::UnorderedList(vec![String::from("this is an element")]))));
-			assert_eq!(match_unordered_list("- this is an element\n- here is another"), Ok(("", Markdown::UnorderedList(vec![String::from("this is an element"), String::from("here is another")]))));
+			assert_eq!(match_unordered_list("- this is an element\n"), Ok(("", Markdown::UnorderedList(vec![String::from("this is an element")]))));
+			assert_eq!(match_unordered_list("- this is an element\n- here is another\n"), Ok(("", Markdown::UnorderedList(vec![String::from("this is an element"), String::from("here is another")]))));
 		}
     }
 }
