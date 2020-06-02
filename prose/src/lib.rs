@@ -67,17 +67,36 @@ pub(self) mod parsers {
 		)(i)
 	}
 
-	fn match_many_unordered(i: &str) -> nom::IResult<&str, Vec<String>> {
-		nom::combinator::map(
-			nom::multi::many0(match_unordered_list_element),
-			|line| line.iter().map( |s| s.to_string() ).collect()
-		)(i)
-	}
-
 	fn match_unordered_list(i: &str)  -> nom::IResult<&str, Markdown> {
 		nom::combinator::map(
 			nom::multi::many0(match_unordered_list_element),
 			|r| Markdown::UnorderedList(
+				r.iter().map(|s| s.to_string()).collect()
+			)
+		)(i)
+	}
+
+	fn match_ordered_list_tag(i: &str) -> nom::IResult<&str, &str> {
+		nom::sequence::terminated(
+			nom::sequence::terminated(
+				nom::bytes::complete::take_while1(|d| nom::character::is_digit(d as u8)),
+				nom::bytes::complete::tag(".")
+			),
+			nom::bytes::complete::tag(" ")
+		)(i)
+	}
+
+	fn match_ordered_list_element(i: &str) -> nom::IResult<&str, &str> {
+		nom::sequence::preceded(
+			match_ordered_list_tag,
+			match_line
+		)(i)
+	}
+
+	fn match_ordered_list(i: &str)  -> nom::IResult<&str, Markdown> {
+		nom::combinator::map(
+			nom::multi::many0(match_ordered_list_element),
+			|r| Markdown::OrderedList(
 				r.iter().map(|s| s.to_string()).collect()
 			)
 		)(i)
@@ -149,15 +168,36 @@ pub(self) mod parsers {
 		}
 
 		#[test]
-		fn test_match_many_unordered() {
-			assert_eq!(match_many_unordered("- this is an element\n"), Ok(("",  vec![String::from("this is an element")])));
-			assert_eq!(match_many_unordered("- this is an element\n- here is another\n"), Ok(("", vec![String::from("this is an element"), String::from("here is another")])));
-		}
-
-		#[test]
 		fn test_match_unordered_list() {
 			assert_eq!(match_unordered_list("- this is an element\n"), Ok(("", Markdown::UnorderedList(vec![String::from("this is an element")]))));
 			assert_eq!(match_unordered_list("- this is an element\n- here is another\n"), Ok(("", Markdown::UnorderedList(vec![String::from("this is an element"), String::from("here is another")]))));
+		}
+
+		#[test]
+		fn test_match_ordered_list_tag() {
+			assert_eq!(match_ordered_list_tag("1. "), Ok(("", "1")));
+			assert_eq!(match_ordered_list_tag("1234567. "), Ok(("", "1234567")));
+			assert_eq!(match_ordered_list_tag("3. and some more"), Ok(("and some more", "3")));
+			assert_eq!(match_ordered_list_tag("1"), Err(nom::Err::Error(("", nom::error::ErrorKind::Tag))));
+			assert_eq!(match_ordered_list_tag("1.and some more"), Err(nom::Err::Error(("and some more", nom::error::ErrorKind::Tag))));
+			assert_eq!(match_ordered_list_tag("1111."), Err(nom::Err::Error(("", nom::error::ErrorKind::Tag))));
+			assert_eq!(match_ordered_list_tag(""), Err(nom::Err::Error(("", nom::error::ErrorKind::TakeWhile1))));
+		}
+
+		#[test]
+		fn test_match_ordered_list_element() {
+			assert_eq!(match_ordered_list_element("1. this is an element\n"), Ok(("", "this is an element")));
+			assert_eq!(match_ordered_list_element("1. this is an element\n1. here is another\n"), Ok(("1. here is another\n", "this is an element")));
+			assert_eq!(match_ordered_list_element(""), Err(nom::Err::Error(("", nom::error::ErrorKind::TakeWhile1))));
+			assert_eq!(match_ordered_list_element("\n"), Err(nom::Err::Error(("\n", nom::error::ErrorKind::TakeWhile1))));
+			assert_eq!(match_ordered_list_element("1. \n"), Ok(("", "")));
+			assert_eq!(match_ordered_list_element("1.\n"), Err(nom::Err::Error(("\n", nom::error::ErrorKind::Tag))));
+		}
+
+		#[test]
+		fn test_match_ordered_list() {
+			assert_eq!(match_ordered_list("1. this is an element\n"), Ok(("", Markdown::OrderedList(vec![String::from("this is an element")]))));
+			assert_eq!(match_ordered_list("1. this is an element\n2. here is another\n"), Ok(("", Markdown::OrderedList(vec![String::from("this is an element"), String::from("here is another")]))));
 		}
     }
 }
