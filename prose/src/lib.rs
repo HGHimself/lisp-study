@@ -9,96 +9,97 @@ pub type BoxError = std::boxed::Box<dyn
 
 #[derive(Clone,Debug,PartialEq)]
 pub enum Markdown {
-    Heading(usize, String),
-    Bold(String),
-    Italic(String),
-    OrderedList(Vec<String>),
-    UnorderedList(Vec<String>),
-    Code(String),
+	// some markdown has a nested structure
+	// for example, you can have bold text inside of an ordered list
+    Heading(usize, MarkdownText),
+	OrderedList(Vec<MarkdownText>),
+    UnorderedList(Vec<MarkdownText>),
+	Line(MarkdownText),
+	// some markdown is terminal
+	// we will have to decide if the you can have nested inline tags
+	// but for now we will simplify
+    Codeblock(String),
     Link(String, String),
     Image(String, String),
+	InlineCode(String),
+	Bold(String),
+    Italic(String),
+	Plaintext(String),
 }
+
+#[derive(Clone,Debug,PartialEq)]
+pub struct MarkdownText(Vec<Markdown>);
+
 
 pub(self) mod parsers {
     use super::Markdown;
 
-    fn not_whitespace(i: &str) -> nom::IResult<&str, &str> {
-        nom::bytes::complete::is_not(" \t")(i)
-    }
-
-	// this will match a whole line
-	fn match_line(i: &str) -> nom::IResult<&str, &str> {
-		nom::sequence::terminated(
-        	nom::bytes::complete::take_while(|c| c != '\n'),
-			nom::bytes::complete::tag("\n")
-		)(i)
-    }
-
-	// this guy matches the literal character #
-	fn match_header_tag(i: &str) -> nom::IResult<&str, usize>  {
+	fn match_boldtext(i: &str) -> nom::IResult<&str, Markdown> {
 		nom::combinator::map(
-			nom::sequence::terminated(
-				nom::bytes::complete::take_while1(|c| c == '#'),
-				nom::bytes::complete::tag(" ")
+			nom::sequence::delimited(
+				nom::bytes::complete::tag("**"),
+				nom::bytes::complete::is_not("**"),
+				nom::bytes::complete::tag("**"),
 			),
-			|s: &str| s.len()
+			|s: &str| Markdown::Bold(s.to_string())
 		)(i)
 	}
 
-	// this combines a tuple of the header tag and the rest of the line
-	fn match_header(i: &str) -> nom::IResult<&str, Markdown> {
+	fn match_italics(i: &str) -> nom::IResult<&str, Markdown> {
 		nom::combinator::map(
-			nom::sequence::tuple(( match_header_tag, match_line )),
-			|r| Markdown::Heading(r.0, r.1.to_string())
-		)(i)
-	}
-
-	fn match_unordered_list_tag(i: &str) -> nom::IResult<&str, &str> {
-		nom::sequence::terminated(
-			nom::bytes::complete::tag("-"),
-			nom::bytes::complete::tag(" ")
-		)(i)
-	}
-
-	fn match_unordered_list_element(i: &str) -> nom::IResult<&str, &str> {
-		nom::sequence::preceded(
-			match_unordered_list_tag,
-			match_line
-		)(i)
-	}
-
-	fn match_unordered_list(i: &str)  -> nom::IResult<&str, Markdown> {
-		nom::combinator::map(
-			nom::multi::many0(match_unordered_list_element),
-			|r| Markdown::UnorderedList(
-				r.iter().map(|s| s.to_string()).collect()
-			)
-		)(i)
-	}
-
-	fn match_ordered_list_tag(i: &str) -> nom::IResult<&str, &str> {
-		nom::sequence::terminated(
-			nom::sequence::terminated(
-				nom::bytes::complete::take_while1(|d| nom::character::is_digit(d as u8)),
-				nom::bytes::complete::tag(".")
+			nom::sequence::delimited(
+				nom::bytes::complete::tag("*"),
+				nom::bytes::complete::is_not("*"),
+				nom::bytes::complete::tag("*"),
 			),
-			nom::bytes::complete::tag(" ")
+			|s: &str| Markdown::Italic(s.to_string())
 		)(i)
 	}
 
-	fn match_ordered_list_element(i: &str) -> nom::IResult<&str, &str> {
-		nom::sequence::preceded(
-			match_ordered_list_tag,
-			match_line
-		)(i)
-	}
-
-	fn match_ordered_list(i: &str)  -> nom::IResult<&str, Markdown> {
+	fn match_inline_code(i: &str) -> nom::IResult<&str, Markdown> {
 		nom::combinator::map(
-			nom::multi::many0(match_ordered_list_element),
-			|r| Markdown::OrderedList(
-				r.iter().map(|s| s.to_string()).collect()
-			)
+			nom::sequence::delimited(
+				nom::bytes::complete::tag("`"),
+				nom::bytes::complete::is_not("`"),
+				nom::bytes::complete::tag("`"),
+			),
+			|s: &str| Markdown::InlineCode(s.to_string())
+		)(i)
+	}
+
+	fn match_link(i: &str) -> nom::IResult<&str, Markdown> {
+		nom::combinator::map(
+			nom::sequence::pair(
+				nom::sequence::delimited(
+					nom::bytes::complete::tag("["),
+					nom::bytes::complete::is_not("]"),
+					nom::bytes::complete::tag("]"),
+				),
+				nom::sequence::delimited(
+					nom::bytes::complete::tag("("),
+					nom::bytes::complete::is_not(")"),
+					nom::bytes::complete::tag(")"),
+				)
+			),
+			|(tag, link): (&str, &str)| Markdown::Link(tag.to_string(), link.to_string())
+		)(i)
+	}
+
+	fn match_image(i: &str) -> nom::IResult<&str, Markdown> {
+		nom::combinator::map(
+			nom::sequence::pair(
+				nom::sequence::delimited(
+					nom::bytes::complete::tag("!["),
+					nom::bytes::complete::is_not("]"),
+					nom::bytes::complete::tag("]"),
+				),
+				nom::sequence::delimited(
+					nom::bytes::complete::tag("("),
+					nom::bytes::complete::is_not(")"),
+					nom::bytes::complete::tag(")"),
+				)
+			),
+			|(tag, link): (&str, &str)| Markdown::Image(tag.to_string(), link.to_string())
 		)(i)
 	}
 
@@ -106,98 +107,48 @@ pub(self) mod parsers {
     mod tests {
         use super::*;
 
-        #[test]
-        fn test_non_whitespace() {
-            assert_eq!(not_whitespace("abcd efg"), Ok((" efg", "abcd")));
-            assert_eq!(not_whitespace("ab\tcd efg"), Ok(("\tcd efg", "ab")));
-            assert_eq!(not_whitespace("abcd efg"), Ok((" efg", "abcd")));
-			assert_eq!(not_whitespace("abcd\tefg"), Ok(("\tefg", "abcd")));
-			assert_eq!(not_whitespace(" abcdefg"), Err(nom::Err::Error((" abcdefg", nom::error::ErrorKind::IsNot))));
-        }
-
 		#[test]
-        fn test_match_line() {
-            assert_eq!(match_line("and then afterwards we were able to see everything\n"), Ok(("", "and then afterwards we were able to see everything")));
-            assert_eq!(match_line("but\nthen later"), Ok(("then later", "but")));
-            assert_eq!(match_line("okay\n\n"), Ok(("\n", "okay")));
-			assert_eq!(match_line("\n"), Ok(("", "")));
-			assert_eq!(match_line(""), Err(nom::Err::Error(("", nom::error::ErrorKind::Tag))));
-        }
-
-        #[test]
-        fn test_match_headers() {
-			assert_eq!(match_header_tag("# "), Ok(("", 1)));
-            assert_eq!(match_header_tag("### "), Ok(("", 3)));
-            assert_eq!(match_header_tag("# h1"), Ok(("h1", 1)));
-			assert_eq!(match_header_tag("# h1\n"), Ok(("h1\n", 1)));
-			assert_eq!(match_header_tag(" "), Err(nom::Err::Error((" ", nom::error::ErrorKind::TakeWhile1))));
-			assert_eq!(match_header_tag("#\n"), Err(nom::Err::Error(("\n", nom::error::ErrorKind::Tag))));
+		fn test_match_italics() {
+			assert_eq!(match_italics("*here is italic*"), Ok(("", Markdown::Italic(String::from("here is italic")))));
+			assert_eq!(match_italics("*here is italic"), Err(nom::Err::Error(("", nom::error::ErrorKind::Tag))));
+			assert_eq!(match_italics("here is italic*"), Err(nom::Err::Error(("here is italic*", nom::error::ErrorKind::Tag))));
+			assert_eq!(match_italics("here is italic"), Err(nom::Err::Error(("here is italic", nom::error::ErrorKind::Tag))));
+			assert_eq!(match_italics("*"), Err(nom::Err::Error(("", nom::error::ErrorKind::IsNot))));
+			assert_eq!(match_italics("**"), Err(nom::Err::Error(("*", nom::error::ErrorKind::IsNot))));
+			assert_eq!(match_italics(""), Err(nom::Err::Error(("", nom::error::ErrorKind::Tag))));
+			assert_eq!(match_italics("**we are doing bold**"), Err(nom::Err::Error(("*we are doing bold**", nom::error::ErrorKind::IsNot))));
 		}
 
 		#[test]
-		fn test_match_header() {
-			assert_eq!(match_header("# h1\n"), Ok(("", Markdown::Heading(1, String::from("h1")))));
-			assert_eq!(match_header("## h2\n"), Ok(("", Markdown::Heading(2, String::from("h2")))));
-			assert_eq!(match_header("###  h3\n"), Ok(("", Markdown::Heading(3, String::from(" h3")))));
-			assert_eq!(match_header("###h3"), Err(nom::Err::Error(("h3", nom::error::ErrorKind::Tag))));
-			assert_eq!(match_header("###"), Err(nom::Err::Error(("", nom::error::ErrorKind::Tag))));
-			assert_eq!(match_header(""), Err(nom::Err::Error(("", nom::error::ErrorKind::TakeWhile1))));
-			assert_eq!(match_header("\n"), Err(nom::Err::Error(("\n", nom::error::ErrorKind::TakeWhile1))));
-			assert_eq!(match_header("#\n"), Err(nom::Err::Error(("\n", nom::error::ErrorKind::Tag))));
-			assert_eq!(match_header("# \n"), Ok(("", Markdown::Heading(1, String::from("")))));
+		fn test_match_boldtext() {
+			assert_eq!(match_boldtext("**here is bold**"), Ok(("", Markdown::Bold(String::from("here is bold")))));
+			assert_eq!(match_boldtext("**here is bold"), Err(nom::Err::Error(("", nom::error::ErrorKind::Tag))));
+			assert_eq!(match_boldtext("here is bold**"), Err(nom::Err::Error(("here is bold**", nom::error::ErrorKind::Tag))));
+			assert_eq!(match_boldtext("here is bold"), Err(nom::Err::Error(("here is bold", nom::error::ErrorKind::Tag))));
+			assert_eq!(match_boldtext("****"), Err(nom::Err::Error(("**", nom::error::ErrorKind::IsNot))));
+			assert_eq!(match_boldtext("**"), Err(nom::Err::Error(("", nom::error::ErrorKind::IsNot))));
+			assert_eq!(match_boldtext("*"), Err(nom::Err::Error(("*", nom::error::ErrorKind::Tag))));
+			assert_eq!(match_boldtext(""), Err(nom::Err::Error(("", nom::error::ErrorKind::Tag))));
+			assert_eq!(match_boldtext("*this is italic*"), Err(nom::Err::Error(("*this is italic*", nom::error::ErrorKind::Tag))));
 		}
 
 		#[test]
-		fn test_match_unordered_list_tag() {
-			assert_eq!(match_unordered_list_tag("- "), Ok(("", "-")));
-			assert_eq!(match_unordered_list_tag("- and some more"), Ok(("and some more", "-")));
-			assert_eq!(match_unordered_list_tag("-"), Err(nom::Err::Error(("", nom::error::ErrorKind::Tag))));
-			assert_eq!(match_unordered_list_tag("-and some more"), Err(nom::Err::Error(("and some more", nom::error::ErrorKind::Tag))));
-			assert_eq!(match_unordered_list_tag("--"), Err(nom::Err::Error(("-", nom::error::ErrorKind::Tag))));
-			assert_eq!(match_unordered_list_tag(""), Err(nom::Err::Error(("", nom::error::ErrorKind::Tag))));
+		fn test_match_inline_code() {
+			assert_eq!(match_inline_code("`here is code`"), Ok(("", Markdown::InlineCode(String::from("here is code")))));
+			assert_eq!(match_inline_code("`here is code"), Err(nom::Err::Error(("", nom::error::ErrorKind::Tag))));
+			assert_eq!(match_inline_code("here is code`"), Err(nom::Err::Error(("here is code`", nom::error::ErrorKind::Tag))));
+			assert_eq!(match_inline_code("``"), Err(nom::Err::Error(("`", nom::error::ErrorKind::IsNot))));
+			assert_eq!(match_inline_code("`"), Err(nom::Err::Error(("", nom::error::ErrorKind::IsNot))));
+			assert_eq!(match_inline_code(""), Err(nom::Err::Error(("", nom::error::ErrorKind::Tag))));
 		}
 
 		#[test]
-		fn test_match_unordered_list_element() {
-			assert_eq!(match_unordered_list_element("- this is an element\n"), Ok(("", "this is an element")));
-			assert_eq!(match_unordered_list_element("- this is an element\n- here is another\n"), Ok(("- here is another\n", "this is an element")));
-			assert_eq!(match_unordered_list_element(""), Err(nom::Err::Error(("", nom::error::ErrorKind::Tag))));
-			assert_eq!(match_unordered_list_element("\n"), Err(nom::Err::Error(("\n", nom::error::ErrorKind::Tag))));
-			assert_eq!(match_unordered_list_element("- \n"), Ok(("", "")));
-			assert_eq!(match_unordered_list_element("-\n"), Err(nom::Err::Error(("\n", nom::error::ErrorKind::Tag))));
+		fn test_match_link() {
+			assert_eq!(match_link("[title](https://www.example.com)"), Ok(("", (Markdown::Link(String::from("title"), String::from("https://www.example.com"))))));
 		}
 
-		#[test]
-		fn test_match_unordered_list() {
-			assert_eq!(match_unordered_list("- this is an element\n"), Ok(("", Markdown::UnorderedList(vec![String::from("this is an element")]))));
-			assert_eq!(match_unordered_list("- this is an element\n- here is another\n"), Ok(("", Markdown::UnorderedList(vec![String::from("this is an element"), String::from("here is another")]))));
-		}
-
-		#[test]
-		fn test_match_ordered_list_tag() {
-			assert_eq!(match_ordered_list_tag("1. "), Ok(("", "1")));
-			assert_eq!(match_ordered_list_tag("1234567. "), Ok(("", "1234567")));
-			assert_eq!(match_ordered_list_tag("3. and some more"), Ok(("and some more", "3")));
-			assert_eq!(match_ordered_list_tag("1"), Err(nom::Err::Error(("", nom::error::ErrorKind::Tag))));
-			assert_eq!(match_ordered_list_tag("1.and some more"), Err(nom::Err::Error(("and some more", nom::error::ErrorKind::Tag))));
-			assert_eq!(match_ordered_list_tag("1111."), Err(nom::Err::Error(("", nom::error::ErrorKind::Tag))));
-			assert_eq!(match_ordered_list_tag(""), Err(nom::Err::Error(("", nom::error::ErrorKind::TakeWhile1))));
-		}
-
-		#[test]
-		fn test_match_ordered_list_element() {
-			assert_eq!(match_ordered_list_element("1. this is an element\n"), Ok(("", "this is an element")));
-			assert_eq!(match_ordered_list_element("1. this is an element\n1. here is another\n"), Ok(("1. here is another\n", "this is an element")));
-			assert_eq!(match_ordered_list_element(""), Err(nom::Err::Error(("", nom::error::ErrorKind::TakeWhile1))));
-			assert_eq!(match_ordered_list_element("\n"), Err(nom::Err::Error(("\n", nom::error::ErrorKind::TakeWhile1))));
-			assert_eq!(match_ordered_list_element("1. \n"), Ok(("", "")));
-			assert_eq!(match_ordered_list_element("1.\n"), Err(nom::Err::Error(("\n", nom::error::ErrorKind::Tag))));
-		}
-
-		#[test]
-		fn test_match_ordered_list() {
-			assert_eq!(match_ordered_list("1. this is an element\n"), Ok(("", Markdown::OrderedList(vec![String::from("this is an element")]))));
-			assert_eq!(match_ordered_list("1. this is an element\n2. here is another\n"), Ok(("", Markdown::OrderedList(vec![String::from("this is an element"), String::from("here is another")]))));
+		fn test_match_image() {
+			assert_eq!(match_link("	![alt text](image.jpg)"), Ok(("", (Markdown::Link(String::from("alt text"), String::from("image.jpg"))))));
 		}
     }
 }
