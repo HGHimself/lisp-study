@@ -5,6 +5,7 @@ use prose::BoxError;
 
 fn main() -> std::result::Result<(), BoxError> {
 	// Inside the body of main we can now use the ? operator.
-	prose::markdown()?;
+	let html = prose::markdown()?;
+	println!("{}", html);
 	Ok(())
 }
