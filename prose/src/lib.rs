@@ -202,21 +202,27 @@ pub(self) mod parsers {
 		nom::multi::many1(match_ordered_list_element)(i)
 	}
 
-	fn match_markdown(i: &str) -> nom::IResult<&str, Markdown> {
-		nom::branch::alt((
-			nom::combinator::map(
-				match_header,
-				|e| Markdown::Heading(e.0, e.1)
-			),
-			nom::combinator::map(
-				match_unordered_list,
-				|e| Markdown::UnorderedList(e)
-			),
-			nom::combinator::map(
-				match_ordered_list,
-				|e| Markdown::OrderedList(e)
-			),
-		))(i)
+	fn match_markdown(i: &str) -> nom::IResult<&str, Vec<Markdown>> {
+		nom::multi::many1(
+			nom::branch::alt((
+				nom::combinator::map(
+					match_header,
+					|e| Markdown::Heading(e.0, e.1)
+				),
+				nom::combinator::map(
+					match_unordered_list,
+					|e| Markdown::UnorderedList(e)
+				),
+				nom::combinator::map(
+					match_ordered_list,
+					|e| Markdown::OrderedList(e)
+				),
+				nom::combinator::map(
+					match_markdown_text,
+					|e| Markdown::Line(e)
+				)
+			))
+		)(i)
 	}
 
     #[cfg(test)]
@@ -365,6 +371,7 @@ pub(self) mod parsers {
 			assert_eq!(match_header(""), Err(nom::Err::Error(("", nom::error::ErrorKind::TakeWhile1))));
 			assert_eq!(match_header("#"), Err(nom::Err::Error(("", nom::error::ErrorKind::Tag))));
 			assert_eq!(match_header("# \n"), Ok(("", (1, vec![]))));
+			assert_eq!(match_header("# test"), Err(nom::Err::Error(("", nom::error::ErrorKind::Tag))));
 		}
 
 		#[test]
@@ -384,11 +391,13 @@ pub(self) mod parsers {
 			assert_eq!(match_unordered_list_element(""), Err(nom::Err::Error(("", nom::error::ErrorKind::Tag))));
 			assert_eq!(match_unordered_list_element("- \n"), Ok(("", vec![])));
 			assert_eq!(match_unordered_list_element("- "), Err(nom::Err::Error(("", nom::error::ErrorKind::Tag))));
+			assert_eq!(match_unordered_list_element("- test"), Err(nom::Err::Error(("", nom::error::ErrorKind::Tag))));
 			assert_eq!(match_unordered_list_element("-"), Err(nom::Err::Error(("", nom::error::ErrorKind::Tag))));
 		}
 
 		#[test]
 		fn test_match_unordered_list() {
+			assert_eq!(match_unordered_list("- this is an element"), Err(nom::Err::Error(("", nom::error::ErrorKind::Tag))));
 			assert_eq!(match_unordered_list("- this is an element\n"), Ok(("", vec![vec![MarkdownInline::Plaintext(String::from("this is an element"))]])));
 			assert_eq!(match_unordered_list("- this is an element\n- here is another\n"), Ok(("", vec![vec![MarkdownInline::Plaintext(String::from("this is an element"))], vec![MarkdownInline::Plaintext(String::from("here is another"))]])));
 		}
@@ -411,6 +420,7 @@ pub(self) mod parsers {
 			assert_eq!(match_ordered_list_element(""), Err(nom::Err::Error(("", nom::error::ErrorKind::TakeWhile1))));
 			assert_eq!(match_ordered_list_element(""), Err(nom::Err::Error(("", nom::error::ErrorKind::TakeWhile1))));
 			assert_eq!(match_ordered_list_element("1. \n"), Ok(("", vec![])));
+			assert_eq!(match_ordered_list_element("1. test"), Err(nom::Err::Error(("", nom::error::ErrorKind::Tag))));
 			assert_eq!(match_ordered_list_element("1. "), Err(nom::Err::Error(("", nom::error::ErrorKind::Tag))));
 			assert_eq!(match_ordered_list_element("1."), Err(nom::Err::Error(("", nom::error::ErrorKind::Tag))));
 		}
@@ -418,7 +428,27 @@ pub(self) mod parsers {
 		#[test]
 		fn test_match_ordered_list() {
 			assert_eq!(match_ordered_list("1. this is an element\n"), Ok(("", vec![vec![MarkdownInline::Plaintext(String::from("this is an element"))]])));
+			assert_eq!(match_ordered_list("1. test"), Err(nom::Err::Error(("", nom::error::ErrorKind::Tag))));
 			assert_eq!(match_ordered_list("1. this is an element\n2. here is another\n"), Ok(("", vec![vec!(MarkdownInline::Plaintext(String::from("this is an element"))), vec![MarkdownInline::Plaintext(String::from("here is another"))]])));
+		}
+
+		fn test_match_markdown() {
+			assert_eq!(
+				match_markdown("# Foobar\n\nFoobar is a Python library for dealing with word pluralization.\n\n## Installation\n\nUse the package manager [pip](https://pip.pypa.io/en/stable/) to install foobar.\n"),
+				Ok(("", vec![
+					Markdown::Heading(1, vec![MarkdownInline::Plaintext(String::from("Foobar"))]),
+					Markdown::Line(vec![]),
+					Markdown::Line(vec![MarkdownInline::Plaintext(String::from("Foobar is a Python library for dealing with word pluralization."))]),
+					Markdown::Line(vec![]),
+					Markdown::Heading(2, vec![MarkdownInline::Plaintext(String::from("Installation"))]),
+					Markdown::Line(vec![]),
+					Markdown::Line(vec![
+						MarkdownInline::Plaintext(String::from("Use the package manager ")),
+						MarkdownInline::Link(String::from("pip"), String::from("https://pip.pypa.io/en/stable/")),
+						MarkdownInline::Plaintext(String::from(" to install foobar.")),
+					]),
+				]))
+			)
 		}
     }
 }
