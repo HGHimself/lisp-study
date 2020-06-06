@@ -148,7 +148,7 @@ pub(self) mod parsers {
         }
 
         #[test]
-        fn test_match_headers() {
+        fn test_match_header_tag() {
 			assert_eq!(match_header_tag("# "), Ok(("", 1)));
             assert_eq!(match_header_tag("### "), Ok(("", 3)));
             assert_eq!(match_header_tag("# h1"), Ok(("h1", 1)));
