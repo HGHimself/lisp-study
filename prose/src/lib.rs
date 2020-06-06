@@ -29,6 +29,26 @@ pub enum MarkdownInline {
 	Plaintext(String),
 }
 
+use std::io::BufRead;
+use std::io::Read;
+use std::fs;
+
+pub fn markdown() -> Result<(), BoxError> {
+	let filename = "./example.md";
+
+    let contents = fs::read_to_string(filename)?;
+
+	match parsers::match_markdown(&contents[..]) {
+		Ok( (_, m) ) => {
+			println!("{:?}", m);
+			Ok(())
+		},
+		Err(_) => {
+			return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "oh no we are fucked!")))
+		}
+	}
+}
+
 
 pub(self) mod parsers {
     use super::Markdown;
@@ -145,15 +165,16 @@ pub(self) mod parsers {
 	}
 
 	fn match_code_block(i: &str) -> IResult<&str, &str> {
-
+		delimited( tag("```"), is_not("```"), tag("```") )(i)
 	}
 
-	fn match_markdown(i: &str) -> IResult<&str, Vec<Markdown>> {
+	pub fn match_markdown(i: &str) -> IResult<&str, Vec<Markdown>> {
 		many1(
 			alt((
 				map( match_header, |e| Markdown::Heading(e.0, e.1) ),
 				map( match_unordered_list, |e| Markdown::UnorderedList(e) ),
 				map( match_ordered_list, |e| Markdown::OrderedList(e) ),
+				map( match_code_block, |e| Markdown::Codeblock(e.to_string()) ),
 				map( match_markdown_text, |e| Markdown::Line(e) )
 			))
 		)(i)
@@ -366,13 +387,31 @@ pub(self) mod parsers {
 			assert_eq!(match_ordered_list("1. this is an element\n2. here is another\n"), Ok(("", vec![vec!(MarkdownInline::Plaintext(String::from("this is an element"))), vec![MarkdownInline::Plaintext(String::from("here is another"))]])));
 		}
 
+		#[test]
+		fn test_match_codeblock() {
+			assert_eq!(
+				match_code_block("```bash\n pip install foobar\n```"),
+				Ok(("", "bash\n pip install foobar\n"))
+			);
+			assert_eq!(
+				match_code_block("```python\nimport foobar\n\nfoobar.pluralize('word') # returns 'words'\nfoobar.pluralize('goose') # returns 'geese'\nfoobar.singularize('phenomena') # returns 'phenomenon'\n```"),
+				Ok(("", "python\nimport foobar\n\nfoobar.pluralize('word') # returns 'words'\nfoobar.pluralize('goose') # returns 'geese'\nfoobar.singularize('phenomena') # returns 'phenomenon'\n"))
+			);
+			// assert_eq!(
+			// 	match_code_block("```bash\n pip `install` foobar\n```"),
+			// 	Ok(("", "bash\n pip `install` foobar\n"))
+			// );
+		}
+
 		fn test_match_markdown() {
 			assert_eq!(
-				match_markdown("# Foobar\n\nFoobar is a Python library for dealing with word pluralization.\n\n## Installation\n\nUse the package manager [pip](https://pip.pypa.io/en/stable/) to install foobar.\n"),
+				match_markdown("# Foobar\n\nFoobar is a Python library for dealing with word pluralization.\n\n```bash\n pip install foobar\n```\n\n## Installation\n\nUse the package manager [pip](https://pip.pypa.io/en/stable/) to install foobar.\n```python\nimport foobar\n\nfoobar.pluralize('word') # returns 'words'\nfoobar.pluralize('goose') # returns 'geese'\nfoobar.singularize('phenomena') # returns 'phenomenon'\n```"),
 				Ok(("", vec![
 					Markdown::Heading(1, vec![MarkdownInline::Plaintext(String::from("Foobar"))]),
 					Markdown::Line(vec![]),
 					Markdown::Line(vec![MarkdownInline::Plaintext(String::from("Foobar is a Python library for dealing with word pluralization."))]),
+					Markdown::Line(vec![]),
+					Markdown::Codeblock(String::from("bash\n pip install foobar\n")),
 					Markdown::Line(vec![]),
 					Markdown::Heading(2, vec![MarkdownInline::Plaintext(String::from("Installation"))]),
 					Markdown::Line(vec![]),
@@ -381,6 +420,7 @@ pub(self) mod parsers {
 						MarkdownInline::Link(String::from("pip"), String::from("https://pip.pypa.io/en/stable/")),
 						MarkdownInline::Plaintext(String::from(" to install foobar.")),
 					]),
+					Markdown::Codeblock(String::from("python\nimport foobar\n\nfoobar.pluralize('word') # returns 'words'\nfoobar.pluralize('goose') # returns 'geese'\nfoobar.singularize('phenomena') # returns 'phenomenon'\n")),
 				]))
 			)
 		}

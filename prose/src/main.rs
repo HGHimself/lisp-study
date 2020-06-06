@@ -5,6 +5,6 @@ use prose::BoxError;
 
 fn main() -> std::result::Result<(), BoxError> {
 	// Inside the body of main we can now use the ? operator.
-	// prose::mounts()?;
+	prose::markdown()?;
 	Ok(())
 }
