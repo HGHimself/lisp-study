@@ -1,10 +1,11 @@
 // lib.rs
 use wasm_bindgen::prelude::*;
 use yew::prelude::*;
+mod markdown;
 
 struct Model {
     link: ComponentLink<Self>,
-    value: i64,
+    value: String,
 }
 
 enum Msg {
@@ -17,13 +18,13 @@ impl Component for Model {
     fn create(_: Self::Properties, link: ComponentLink<Self>) -> Self {
         Self {
             link,
-            value: 0,
+            value: String::from("Not yet ready"),
         }
     }
 
     fn update(&mut self, msg: Self::Message) -> ShouldRender {
         match msg {
-            Msg::AddOne => self.value += 1
+            Msg::AddOne => self.value = markdown::markdown::markdown("# hey there\n")
         }
         true
     }
@@ -39,7 +40,7 @@ impl Component for Model {
         html! {
             <div>
                 <button onclick=self.link.callback(|_| Msg::AddOne)>{ "+1" }</button>
-                <p>{ self.value }</p>
+                <p>{ self.value.to_string() }</p>
             </div>
         }
     }
