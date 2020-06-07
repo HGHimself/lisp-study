@@ -1,15 +1,19 @@
 // lib.rs
 use wasm_bindgen::prelude::*;
+use web_sys::{console, Node};
+use yew::virtual_dom::VNode;
+use yew::{Component, ComponentLink, Html, InputData, ShouldRender};
 use yew::prelude::*;
 mod markdown;
 
 struct Model {
     link: ComponentLink<Self>,
-    value: String,
+    markdown: String,
 }
 
 enum Msg {
-    AddOne,
+    GotInput(String),
+    Clicked,
 }
 
 impl Component for Model {
@@ -18,13 +22,18 @@ impl Component for Model {
     fn create(_: Self::Properties, link: ComponentLink<Self>) -> Self {
         Self {
             link,
-            value: String::from("Not yet ready"),
+            markdown: String::from("Not yet ready"),
         }
     }
 
     fn update(&mut self, msg: Self::Message) -> ShouldRender {
         match msg {
-            Msg::AddOne => self.value = markdown::markdown::markdown("# hey there\n")
+            Msg::GotInput(new_value) => {
+                self.markdown = markdown::markdown::markdown(&new_value);
+            }
+            Msg::Clicked => {
+                self.markdown = "blah blah blah".to_string();
+            }
         }
         true
     }
@@ -37,12 +46,41 @@ impl Component for Model {
     }
 
     fn view(&self) -> Html {
+        let rendered_markdown = {
+            let div = web_sys::window()
+                .unwrap()
+                .document()
+                .unwrap()
+                .create_element("div")
+                .unwrap();
+            div.set_inner_html(&self.markdown);
+            console::log_1(&div);
+            div
+        };
+
+        eprintln!("rendered_markdown: {:?}", rendered_markdown);
+        let node = Node::from(rendered_markdown);
+        let vnode = VNode::VRef(node);
+        eprintln!("rendered_markdown: {:?}", vnode);
+
         html! {
-            <div>
-                <button onclick=self.link.callback(|_| Msg::AddOne)>{ "+1" }</button>
-                <p>{ self.value.to_string() }</p>
+            <div class={"main"}>
+                <div>
+                    <textarea rows=5
+                        oninput=self.link.callback(|e: InputData| Msg::GotInput(e.value))
+                        placeholder="placeholder">
+                    </textarea>
+                    <button onclick=self.link.callback(|_| Msg::Clicked)>{ "change value" }</button>
+                </div>
+                <div>
+                    {&self.markdown}
+                </div>
+                <div>
+                    {vnode}
+                </div>
             </div>
         }
+
     }
 }
 
