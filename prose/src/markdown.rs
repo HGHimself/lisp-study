@@ -25,7 +25,7 @@ pub mod markdown {
     pub fn markdown(md: &str) -> String {
         match parser::parse_markdown(md) {
             Ok((_, m)) => translator::translate(m),
-            Err(_) => String::from("Sorry, this did not seem to work! Maybe your markdown was not well formed!"),
+            Err(_) => String::from("Sorry, this did not seem to work! Maybe your markdown was not well formed, have you hit [Enter] after your last line?"),
         }
     }
 
