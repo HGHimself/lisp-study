@@ -22,7 +22,7 @@ enum Msg {
     Clear,
 }
 
-const DEFAULT: &str = "### 🎭**Prose**
+const DEFAULT: &str = "### 🎭 **Prose**
 ###### **Turning your markdown into lovely HTML!**
 Prose is here to let you draft up a document and watch it render in real time.
 When it is time to save your work, Prose gives you the ability download your document as an `.md` file.
@@ -45,6 +45,9 @@ When it is time to save your work, Prose gives you the ability download your doc
 1. **boldtext**
 1. *italic text*
 1. `inline_code`
+1. Links
+1. Images
+
 
 You may be asking: *What makes this better than any other markdown parser?*
 Well, this is implemented in a very performant systems programming language and is much much faster.
@@ -56,6 +59,7 @@ You probably will see above a benchmark on how long it took to parse this. I hav
 - Bugfixes
 - Download Feature
 - New Markdown Flavors
+- In-Page Timer
 ";
 
 pub struct Timer<'a> {
@@ -129,7 +133,6 @@ impl Component for Model {
                 .create_element("div")
                 .unwrap();
             div.set_inner_html(&self.markdown);
-            console::log_1(&div);
             div
         };
 
@@ -142,7 +145,7 @@ impl Component for Model {
             <div class={"main"}>
                 <div class={"header"}>
                     <h1>{"🎭 Prose"}</h1>
-                    <h6>{"Created by HG King"}</h6>
+                    <h6>{"Created by "}<a href={"https://github.com/HGHimself"}>{"HG King"}</a></h6>
                 </div>
                 <div class={"container"}>
                     <div class={"left"}>
@@ -159,13 +162,13 @@ impl Component for Model {
                         <div class={"container"}>
                             <button
                                 class={"success-button"}
-                                onclick=self.link.callback(|_| Msg::Reset)>{ "🔄RESET" }</button>
+                                onclick=self.link.callback(|_| Msg::Reset)>{ "RESET" }</button>
                             <button
                                 class={"info-button"}
-                                onclick=self.link.callback(|_| Msg::ToggleShow)>{ &self.show }</button>
+                                onclick=self.link.callback(|_| Msg::ToggleShow)>{"TO"}{ &self.show }</button>
                             <button
                                 class={"error-button"}
-                                onclick=self.link.callback(|_| Msg::Clear)>{ "🔄CLEAR" }</button>
+                                onclick=self.link.callback(|_| Msg::Clear)>{ "CLEAR" }</button>
                         </div>
                         <div class={"output"}>
                             <div class={if &self.show == "MARKDOWN" { "x" } else { "hidden" }}>{vnode}</div>

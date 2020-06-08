@@ -1,4 +1,4 @@
-### 🎭**Prose**
+### 🎭 **Prose**
 ###### **Turning your markdown into lovely HTML!**
 Prose is here to let you draft up a document and watch it render in real time.
 
@@ -21,6 +21,8 @@ When it is time to save your work, Prose gives you the ability download your doc
 1. **boldtext**
 1. *italic text*
 1. `inline_code`
+1. Links
+1. Images
 
 You may be asking: *What makes this better than any other markdown parser?*
 Well, this is implemented in a very performant systems programming language and is much much faster.
@@ -31,3 +33,4 @@ You probably will see above a benchmark on how long it took to parse this. I hav
 - Bugfixes
 - Download Feature
 - New Markdown Flavors
+- In-Page Timer
