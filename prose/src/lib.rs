@@ -165,7 +165,7 @@ impl Component for Model {
                                 onclick=self.link.callback(|_| Msg::Reset)>{ "RESET" }</button>
                             <button
                                 class={"info-button"}
-                                onclick=self.link.callback(|_| Msg::ToggleShow)>{"TO"}{ &self.show }</button>
+                                onclick=self.link.callback(|_| Msg::ToggleShow)>{ &self.show }</button>
                             <button
                                 class={"error-button"}
                                 onclick=self.link.callback(|_| Msg::Clear)>{ "CLEAR" }</button>
